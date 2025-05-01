@@ -2,105 +2,73 @@
 
 name: Deploy Streamlit Chat App to Cloud Run
 
-# トリガー: mainブランチにpushされた時、または手動実行時
 on:
   push:
     branches:
-      - main # あなたのリポジトリのメインブランチ名に合わせてください (例: master)
-  workflow_dispatch: # GitHubのActionsタブから手動実行を可能にする
+      - main
+  workflow_dispatch:
 
-# 環境変数: Secretsから読み込む値や固定値を定義
 env:
-  # --- GitHub Secretsから読み込む値 ---
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: ${{ secrets.GCP_REGION }}
   ARTIFACT_REPO: ${{ secrets.GCP_ARTIFACT_REGISTRY_REPO }}
   SERVICE_NAME: ${{ secrets.CLOUD_RUN_SERVICE_NAME }}
-  # Cloud Runサービスが使用するサービスアカウント (推奨)
   RUN_SERVICE_ACCOUNT: ${{ secrets.CLOUD_RUN_SERVICE_ACCOUNT }}
-  # --- 固定値またはリージョンから導出される値 ---
-  # Artifact Registry のホスト名 (リージョンによって形式が決まる)
   GAR_HOSTNAME: ${{ secrets.GCP_REGION }}-docker.pkg.dev
 
 jobs:
   build-and-deploy:
     name: Build and Deploy
-    # 実行環境
     runs-on: ubuntu-latest
-
-    # Workload Identity連携に必要な権限
     permissions:
-      contents: 'read' # コードのチェックアウトに必要
-      id-token: 'write' # OIDCトークン発行 (GCP認証) に必要
+      contents: 'read'
+      id-token: 'write'
 
     steps:
-    # 1. コードをチェックアウト
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # 2. GCPへの認証 (Workload Identity Federation)
-    #    GitHub Actions用のSAになりすます
     - id: 'auth'
+      name: Authenticate to Google Cloud
       uses: 'google-github-actions/auth@v2'
       with:
-        workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }} # WIFプロバイダのリソース名
-        service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }} # GitHub Actionsが使用するSAのメールアドレス
+        workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-    # 3. Docker Buildx セットアップ (マルチプラットフォームビルドなどに有用)
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    # 4. Artifact Registry へのDockerログイン設定
-    #    ステップ2で認証済みのgcloudを使ってDocker認証を設定
     - name: Configure Docker for Artifact Registry
       run: gcloud auth configure-docker ${{ env.GAR_HOSTNAME }} --quiet
 
-    # 5. Dockerイメージ名の定義 (コミットSHAを使って一意のタグを生成)
     - name: Define Docker Image Tag
       run: echo "IMAGE_TAG=${{ env.GAR_HOSTNAME }}/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.SERVICE_NAME }}:${{ github.sha }}" >> $GITHUB_ENV
-      # GITHUB_ENVに設定することで後続のステップで ${{ env.IMAGE_TAG }} として参照可能
 
-    # 6. DockerイメージをビルドしてArtifact Registryにプッシュ
     - name: Build and Push Docker Image
       uses: docker/build-push-action@v5
       with:
-        context: . # Dockerfileがあるディレクトリ (リポジトリルート)
-        push: true # ビルド後にArtifact Registryにプッシュする
-        tags: ${{ env.IMAGE_TAG }} # ステップ5で定義したイメージ名とタグ
-        cache-from: type=gha # GitHub Actionsのキャッシュを読み込みに利用
-        cache-to: type=gha,mode=max # GitHub Actionsのキャッシュを書き込みに利用 (ビルド高速化)
+        context: .
+        push: true
+        tags: ${{ env.IMAGE_TAG }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
-    # 7. Cloud Runへデプロイ
     - id: 'deploy'
+      name: Deploy to Cloud Run
       uses: 'google-github-actions/deploy-cloudrun@v2'
       with:
-        # --- 基本設定 ---
-        service: ${{ env.SERVICE_NAME }} # デプロイするCloud Runサービス名
-        region: ${{ env.REGION }} # デプロイ先のリージョン
-        image: ${{ env.IMAGE_TAG }} # ステップ6でプッシュしたDockerイメージを指定
-
-        # --- 実行アイデンティティ ---
-        # Cloud Runサービスが実行時に使用するサービスアカウントを指定 (重要)
-        # このSAにFirestoreへのアクセス権限 (`roles/datastore.user`) が必要
+        service: ${{ env.SERVICE_NAME }}
+        region: ${{ env.REGION }}
+        image: ${{ env.IMAGE_TAG }}
         service_account: ${{ env.RUN_SERVICE_ACCOUNT }}
-
-        # --- トラフィックとアクセス制御 ---
-        # 未認証アクセスを許可 (アプリ側でログイン制御するため)
-        # これを設定しない場合、デフォルトでIAM認証が必要になる可能性がある
         allow_unauthenticated: true
-
-        # --- オプション設定 (必要に応じてコメント解除・修正) ---
-        # コンテナがリッスンするポート (Dockerfileと合わせる、デフォルト8080)
+        # 必要に応じて以下のオプションを追加・修正
         # port: '8080'
-        # 割り当てるメモリ
         # memory: '512Mi'
-        # 割り当てるCPU
         # cpu: 1
-        # 環境変数 (アプリが必要な場合)
         # env_vars: |
         #   KEY1=VALUE1
         #   KEY2=VALUE2
 
-    # 8. デプロイされたURLを出力 (ワークフローログで確認用)
     - name: Show Deployed URL
       run: echo "Successfully deployed! URL: ${{ steps.deploy.outputs.url }}"
