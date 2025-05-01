@@ -33,6 +33,20 @@ jobs:
         workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
         service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
+    - name: Debug Authentication Info
+      if: always() # 前のステップが失敗しても実行する
+      run: |
+        echo "--- Environment Variables ---"
+        printenv | grep GOOGLE # Google関連の環境変数を確認
+        printenv | grep ACTIONS # Actions関連の環境変数を確認
+        echo "--- gcloud auth list ---"
+        gcloud auth list || echo "gcloud auth list failed"
+        echo "--- gcloud config list ---"
+        gcloud config list --all || echo "gcloud config list failed"
+        echo "--- Trying to print identity token ---"
+        gcloud auth print-identity-token --audiences="sts.googleapis.com" || echo "Failed to print identity token"
+        echo "--- End Debug ---"
+  
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
