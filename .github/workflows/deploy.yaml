@@ -60,12 +60,6 @@ jobs:
         image: ${{ env.IMAGE_TAG }}
         service_account: ${{ env.RUN_SERVICE_ACCOUNT }}
         allow_unauthenticated: true
-        port: '8080'
-        memory: '512Mi'
-        cpu: 1
-        env_vars: |
-          KEY1=VALUE1
-          KEY2=VALUE2
 
     - name: Show Deployed URL
       run: echo "Successfully deployed! URL: ${{ steps.deploy.outputs.url }}"
