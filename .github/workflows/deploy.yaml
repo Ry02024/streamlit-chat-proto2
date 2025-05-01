@@ -60,6 +60,3 @@ jobs:
         image: ${{ env.IMAGE_TAG }}
         service_account: ${{ env.RUN_SERVICE_ACCOUNT }}
         allow_unauthenticated: true
-
-    - name: Show Deployed URL
-      run: echo "Successfully deployed! URL: ${{ steps.deploy.outputs.url }}"
