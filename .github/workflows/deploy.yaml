@@ -1,5 +1,3 @@
-# .github/workflows/deploy.yaml
-
 name: Deploy Streamlit Chat App to Cloud Run
 
 on:
